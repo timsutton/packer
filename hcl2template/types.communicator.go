@@ -5,6 +5,7 @@ import (
 
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
+	"github.com/hashicorp/packer/packer"
 )
 
 type Communicator struct {
@@ -13,7 +14,7 @@ type Communicator struct {
 	// Given name
 	Name string
 
-	Cfg interface{}
+	CommunicatorConfig packer.ConfigurableCommunicator
 
 	HCL2Ref HCL2Ref
 }
@@ -34,21 +35,24 @@ func (p *Parser) decodeCommunicatorConfig(block *hcl.Block) (*Communicator, hcl.
 
 	diags := hcl.Diagnostics{}
 
-	communicator, found := p.CommunicatorSchemas[output.Type]
-	if !found {
+	communicator, err := p.CommunicatorSchemas(output.Type)
+	if err != nil {
 		diags = append(diags, &hcl.Diagnostic{
 			Severity: hcl.DiagError,
-			Summary:  "Unknown " + communicatorLabel + " type " + output.Type,
-			Detail: "A " + communicatorLabel + " type must start with a letter and " +
-				"may contain only letters, digits, underscores, and dashes.",
-			Subject: &block.DefRange,
+			Summary:  "Error loading " + communicatorLabel + " type " + output.Type,
+			Detail:   err.Error(),
+			Subject:  &block.DefRange,
 		})
 		return output, diags
 	}
 
-	flatCommunicator, moreDiags := decodeDecodable(block, nil, communicator)
+	//TODO(azr): decode communicators ? Or roll this back
+	decoded, moreDiags := decodeHCL2Spec(block, nil, communicator)
 	diags = append(diags, moreDiags...)
-	output.Cfg = flatCommunicator
+
+	warnings, err := communicator.Configure(decoded)
+	moreDiags = warningErrorsToDiags(block, warnings, err)
+	diags = append(diags, moreDiags...)
 
 	if !hclsyntax.ValidIdentifier(output.Name) {
 		diags = append(diags, &hcl.Diagnostic{
@@ -59,6 +63,8 @@ func (p *Parser) decodeCommunicatorConfig(block *hcl.Block) (*Communicator, hcl.
 			Subject: &block.DefRange,
 		})
 	}
+
+	output.CommunicatorConfig = communicator
 
 	return output, diags
 }

@@ -42,6 +42,9 @@ type CoreConfig struct {
 	Only   []string
 }
 
+// The function type used to lookup ConfigurableCommunicator implementations.
+type ConfigurableCommunicatorFunc func(name string) (ConfigurableCommunicator, error)
+
 // The function type used to lookup Builder implementations.
 type BuilderFunc func(name string) (Builder, error)
 
@@ -54,6 +57,16 @@ type PostProcessorFunc func(name string) (PostProcessor, error)
 // The function type used to lookup Provisioner implementations.
 type ProvisionerFunc func(name string) (Provisioner, error)
 
+type ProvisionerStore interface {
+	Get(name string) (Provisioner, error)
+	List() (names []string)
+}
+
+type PostProcessorStore interface {
+	Get(name string) (PostProcessor, error)
+	List() (names []string)
+}
+
 // ComponentFinder is a struct that contains the various function
 // pointers necessary to look up components of Packer such as builders,
 // commands, etc.
@@ -62,6 +75,11 @@ type ComponentFinder struct {
 	Hook          HookFunc
 	PostProcessor PostProcessorFunc
 	Provisioner   ProvisionerFunc
+
+	// For HCL2
+	Communicator       ConfigurableCommunicatorFunc
+	ProvisionerStore   ProvisionerStore
+	PostProcessorStore PostProcessorStore
 }
 
 // NewCore creates a new Core.
@@ -112,9 +130,9 @@ func (c *Core) BuildNames() []string {
 	return r
 }
 
-func (c *Core) generateCoreBuildProvisioner(rawP *template.Provisioner, rawName string) (coreBuildProvisioner, error) {
+func (c *Core) generateCoreBuildProvisioner(rawP *template.Provisioner, rawName string) (CoreBuildProvisioner, error) {
 	// Get the provisioner
-	cbp := coreBuildProvisioner{}
+	cbp := CoreBuildProvisioner{}
 	provisioner, err := c.components.Provisioner(rawP.Type)
 	if err != nil {
 		return cbp, fmt.Errorf(
@@ -146,9 +164,9 @@ func (c *Core) generateCoreBuildProvisioner(rawP *template.Provisioner, rawName 
 			Provisioner: provisioner,
 		}
 	}
-	cbp = coreBuildProvisioner{
-		pType:       rawP.Type,
-		provisioner: provisioner,
+	cbp = CoreBuildProvisioner{
+		PType:       rawP.Type,
+		Provisioner: provisioner,
 		config:      config,
 	}
 
@@ -177,7 +195,7 @@ func (c *Core) Build(n string) (Build, error) {
 	rawName := configBuilder.Name
 
 	// Setup the provisioners for this build
-	provisioners := make([]coreBuildProvisioner, 0, len(c.Template.Provisioners))
+	provisioners := make([]CoreBuildProvisioner, 0, len(c.Template.Provisioners))
 	for _, rawP := range c.Template.Provisioners {
 		// If we're skipping this, then ignore it
 		if rawP.OnlyExcept.Skip(rawName) {
@@ -191,7 +209,7 @@ func (c *Core) Build(n string) (Build, error) {
 		provisioners = append(provisioners, cbp)
 	}
 
-	var cleanupProvisioner coreBuildProvisioner
+	var cleanupProvisioner CoreBuildProvisioner
 	if c.Template.CleanupProvisioner != nil {
 		// This is a special instantiation of the shell-local provisioner that
 		// is only run on error at end of provisioning step before other step
@@ -203,9 +221,9 @@ func (c *Core) Build(n string) (Build, error) {
 	}
 
 	// Setup the post-processors
-	postProcessors := make([][]coreBuildPostProcessor, 0, len(c.Template.PostProcessors))
+	postProcessors := make([][]CoreBuildPostProcessor, 0, len(c.Template.PostProcessors))
 	for _, rawPs := range c.Template.PostProcessors {
-		current := make([]coreBuildPostProcessor, 0, len(rawPs))
+		current := make([]CoreBuildPostProcessor, 0, len(rawPs))
 		for _, rawP := range rawPs {
 			if rawP.Skip(rawName) {
 				continue
@@ -233,9 +251,9 @@ func (c *Core) Build(n string) (Build, error) {
 					"post-processor type not found: %s", rawP.Type)
 			}
 
-			current = append(current, coreBuildPostProcessor{
-				processor:         postProcessor,
-				processorType:     rawP.Type,
+			current = append(current, CoreBuildPostProcessor{
+				PostProcessor:     postProcessor,
+				PType:             rawP.Type,
 				config:            rawP.Config,
 				keepInputArtifact: rawP.KeepInputArtifact,
 			})
@@ -251,16 +269,16 @@ func (c *Core) Build(n string) (Build, error) {
 
 	// TODO hooks one day
 
-	return &coreBuild{
-		name:               n,
-		builder:            builder,
-		builderConfig:      configBuilder.Config,
-		builderType:        configBuilder.Type,
-		postProcessors:     postProcessors,
-		provisioners:       provisioners,
-		cleanupProvisioner: cleanupProvisioner,
-		templatePath:       c.Template.Path,
-		variables:          c.variables,
+	return &CoreBuild{
+		Type:               n,
+		Builder:            builder,
+		BuilderConfig:      configBuilder.Config,
+		BuilderType:        configBuilder.Type,
+		PostProcessors:     postProcessors,
+		Provisioners:       provisioners,
+		CleanupProvisioner: cleanupProvisioner,
+		TemplatePath:       c.Template.Path,
+		Variables:          c.variables,
 	}, nil
 }
 

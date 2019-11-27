@@ -1,66 +1,138 @@
 
 // starts resources to provision them.
 build {
-    from "src.amazon-ebs.ubuntu-1604" {
-        ami_name = "that-ubuntu-1.0"
-    }
-
-    from "src.virtualbox-iso.ubuntu-1204" {
-        // build name is defaulted from the label "src.virtualbox-iso.ubuntu-1204"
-        outout_dir = "path/"
-    }
+    from_sources = [
+        "src.amazon-ebs.ubuntu-1604",
+        "src.virtualbox-iso.ubuntu-1204",
+    ]
 
     provision {
         communicator = "comm.ssh.vagrant"
-
+       
         shell {
-            inline = [
-                "echo '{{user `my_secret`}}' :D"
-            ]
-        }
 
-        shell {
-            valid_exit_codes = [
-                0,
-                42,
+            string   = "string"
+            int      = 42
+            int64    = 43
+            bool     = true
+            trilean  = true
+            duration = "10s"
+            map_string_string {
+                a = "b"
+                c = "d"
+            }
+            slice_string = [
+                "a",
+                "b",
+                "c",
             ]
-            scripts = [
-                "script-1.sh",
-                "script-2.sh",
-            ]
-            // override "vmware-iso" { // TODO(azr): handle common fields
-            //     execute_command = "echo 'password' | sudo -S bash {{.Path}}"
-            // }
+
+            nested {
+                string   = "string"
+                int      = 42
+                int64    = 43
+                bool     = true
+                trilean  = true
+                duration = "10s"
+                map_string_string {
+                    a = "b"
+                    c = "d"
+                }
+                slice_string = [
+                    "a",
+                    "b",
+                    "c",
+                ]
+            }
+
+            nested_slice {
+            }
         }
 
         file {
-            source = "app.tar.gz"
-            destination = "/tmp/app.tar.gz"
-            // timeout = "5s" // TODO(azr): handle common fields
+
+            string   = "string"
+            int      = 42
+            int64    = 43
+            bool     = true
+            trilean  = true
+            duration = "10s"
+            map_string_string {
+                a = "b"
+                c = "d"
+            }
+            slice_string = [
+                "a",
+                "b",
+                "c",
+            ]
+
+            nested {
+                string   = "string"
+                int      = 42
+                int64    = 43
+                bool     = true
+                trilean  = true
+                duration = "10s"
+                map_string_string {
+                    a = "b"
+                    c = "d"
+                }
+                slice_string = [
+                    "a",
+                    "b",
+                    "c",
+                ]
+            }
+
+            nested_slice {
+            }
         }
-
-    }
-
-    post_provision {
-        amazon-import {
-            // only = ["src.virtualbox-iso.ubuntu-1204"] // TODO(azr): handle common fields
-            ami_name = "that-ubuntu-1.0"
-        }
-    }
-}
-
-build {
-    // build an ami using the ami from the previous build block.
-    from "src.amazon.that-ubuntu-1.0" {
-        ami_name = "fooooobaaaar"
     }
 
     provision {
+        communicator = "comm.ssh.secure"
+    }
 
-        shell {
-            inline = [
-                "echo HOLY GUACAMOLE !"
+    post-process {
+        amazon-import { 
+            string   = "string"
+            int      = 42
+            int64    = 43
+            bool     = true
+            trilean  = true
+            duration = "10s"
+            map_string_string {
+                a = "b"
+                c = "d"
+            }
+            slice_string = [
+                "a",
+                "b",
+                "c",
             ]
+
+            nested {
+                string   = "string"
+                int      = 42
+                int64    = 43
+                bool     = true
+                trilean  = true
+                duration = "10s"
+                map_string_string {
+                    a = "b"
+                    c = "d"
+                }
+                slice_string = [
+                    "a",
+                    "b",
+                    "c",
+                ]
+            }
+
+            nested_slice {
+            }
         }
     }
+
 }

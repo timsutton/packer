@@ -13,6 +13,9 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/hcl/v2/hclparse"
+	"github.com/hashicorp/packer/hcl2template"
 	"github.com/hashicorp/packer/helper/enumflag"
 	"github.com/hashicorp/packer/packer"
 	"github.com/hashicorp/packer/template"
@@ -52,6 +55,7 @@ func (c *BuildCommand) Run(args []string) int {
 	return c.RunContext(buildCtx, args)
 }
 
+// Config is the command-configuration parsed from the command line.
 type Config struct {
 	Color, Debug, Force, Timestamp bool
 	ParallelBuilds                 int64
@@ -92,28 +96,68 @@ func (c *BuildCommand) ParseArgs(args []string) (Config, int) {
 	return cfg, 0
 }
 
-func (c *BuildCommand) RunContext(buildCtx context.Context, args []string) int {
-	cfg, ret := c.ParseArgs(args)
-	if ret != 0 {
-		return ret
+func (c *BuildCommand) GetBuildsFromHCL(path string) ([]packer.Build, int) {
+	parser := &hcl2template.Parser{
+		Parser:                hclparse.NewParser(),
+		BuilderSchemas:        c.CoreConfig.Components.Builder,
+		ProvisionersSchemas:   c.CoreConfig.Components.ProvisionerStore,
+		CommunicatorSchemas:   c.CoreConfig.Components.Communicator,
+		PostProcessorsSchemas: c.CoreConfig.Components.PostProcessorStore,
+	}
+
+	printDiags := func(diags hcl.Diagnostics) {
+		b := bytes.NewBuffer(nil)
+		err := hcl.NewDiagnosticTextWriter(b, parser.Files(), 80, false).WriteDiagnostics(diags)
+		if err != nil {
+			c.Ui.Error("could not write diagnostic: " + err.Error())
+			return
+		}
+		if b.Len() != 0 {
+			c.Ui.Message(b.String())
+		}
+	}
+
+	cfg, diags := parser.Parse(path)
+	printDiags(diags)
+	if diags.HasErrors() {
+		return nil, 1
+	}
+	builds, diags := cfg.GetBuilds()
+	printDiags(diags)
+	if diags.HasErrors() {
+		return nil, 1
+	}
+
+	return builds, 0
+}
+
+func (c *BuildCommand) GetBuilds(path string) ([]packer.Build, int) {
+
+	isHCLLoaded, err := isHCLLoaded(path)
+	if path != "-" && err != nil {
+		c.Ui.Error(fmt.Sprintf("Could not tell wether %s is hcl enabled: %s", path, err))
+		return nil, 1
+	}
+	if isHCLLoaded {
+		return c.GetBuildsFromHCL(path)
 	}
 
 	// Parse the template
 	var tpl *template.Template
-	var err error
-	tpl, err = template.ParseFile(cfg.Path)
+	tpl, err = template.ParseFile(path)
 	if err != nil {
 		c.Ui.Error(fmt.Sprintf("Failed to parse template: %s", err))
-		return 1
+		return nil, 1
 	}
 
 	// Get the core
 	core, err := c.Meta.Core(tpl)
 	if err != nil {
 		c.Ui.Error(err.Error())
-		return 1
+		return nil, 1
 	}
 
+	ret := 0
 	// Get the builds we care about
 	buildNames := c.Meta.BuildNames(core)
 	builds := make([]packer.Build, 0, len(buildNames))
@@ -123,10 +167,24 @@ func (c *BuildCommand) RunContext(buildCtx context.Context, args []string) int {
 			c.Ui.Error(fmt.Sprintf(
 				"Failed to initialize build '%s': %s",
 				n, err))
+			ret = 1
 			continue
 		}
 
 		builds = append(builds, b)
+	}
+	return builds, ret
+}
+
+func (c *BuildCommand) RunContext(buildCtx context.Context, args []string) int {
+	cfg, ret := c.ParseArgs(args)
+	if ret != 0 {
+		return ret
+	}
+
+	builds, ret := c.GetBuilds(cfg.Path)
+	if ret != 0 {
+		return ret
 	}
 
 	if cfg.Debug {
@@ -141,18 +199,17 @@ func (c *BuildCommand) RunContext(buildCtx context.Context, args []string) int {
 		packer.UiColorYellow,
 		packer.UiColorBlue,
 	}
-	buildUis := make(map[string]packer.Ui)
-	for i, b := range buildNames {
-		var ui packer.Ui
-		ui = c.Ui
+	buildUis := make(map[packer.Build]packer.Ui)
+	for i := range builds {
+		ui := c.Ui
 		if cfg.Color {
 			ui = &packer.ColoredUi{
 				Color: colors[i%len(colors)],
 				Ui:    ui,
 			}
 			if _, ok := c.Ui.(*packer.MachineReadableUi); !ok {
-				ui.Say(fmt.Sprintf("%s output will be in this color.", b))
-				if i+1 == len(buildNames) {
+				ui.Say(fmt.Sprintf("%s: output will be in this color.", builds[i].Name()))
+				if i+1 == len(builds) {
 					// Add a newline between the color output and the actual output
 					c.Ui.Say("")
 				}
@@ -165,7 +222,7 @@ func (c *BuildCommand) RunContext(buildCtx context.Context, args []string) int {
 			}
 		}
 
-		buildUis[b] = ui
+		buildUis[builds[i]] = ui
 	}
 
 	log.Printf("Build debug mode: %v", cfg.Debug)
@@ -173,7 +230,8 @@ func (c *BuildCommand) RunContext(buildCtx context.Context, args []string) int {
 	log.Printf("On error: %v", cfg.OnError)
 
 	// Set the debug and force mode and prepare all the builds
-	for _, b := range builds {
+	for i := range builds {
+		b := builds[i]
 		log.Printf("Preparing build: %s", b.Name())
 		b.SetDebug(cfg.Debug)
 		b.SetForce(cfg.Force)
@@ -185,7 +243,7 @@ func (c *BuildCommand) RunContext(buildCtx context.Context, args []string) int {
 			return 1
 		}
 		if len(warnings) > 0 {
-			ui := buildUis[b.Name()]
+			ui := buildUis[b]
 			ui.Say(fmt.Sprintf("Warnings for build '%s':\n", b.Name()))
 			for _, warning := range warnings {
 				ui.Say(fmt.Sprintf("* %s", warning))
@@ -214,7 +272,7 @@ func (c *BuildCommand) RunContext(buildCtx context.Context, args []string) int {
 
 		b := builds[i]
 		name := b.Name()
-		ui := buildUis[name]
+		ui := buildUis[b]
 		if err := limitParallel.Acquire(buildCtx, 1); err != nil {
 			ui.Error(fmt.Sprintf("Build '%s' failed to acquire semaphore: %s", name, err))
 			errors.Lock()

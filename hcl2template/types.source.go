@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/packer/packer"
 )
 
 // A source field in an HCL file will load into the Source type.
@@ -14,34 +15,46 @@ type Source struct {
 	// Given name; if any
 	Name string
 
-	Cfg interface{}
+	startBuilder func() (packer.Builder, hcl.Diagnostics)
 
 	HCL2Ref HCL2Ref
 }
 
-func (p *Parser) decodeSource(block *hcl.Block, sourceSpecs map[string]Decodable) (*Source, hcl.Diagnostics) {
+func (p *Parser) decodeSource(block *hcl.Block) (*Source, hcl.Diagnostics) {
 	source := &Source{
 		Type: block.Labels[0],
 		Name: block.Labels[1],
 	}
 	source.HCL2Ref.DeclRange = block.DefRange
 
-	var diags hcl.Diagnostics
+	starter := func() (packer.Builder, hcl.Diagnostics) {
+		var diags hcl.Diagnostics
 
-	sourceSpec, found := sourceSpecs[source.Type]
-	if !found {
-		diags = append(diags, &hcl.Diagnostic{
-			Summary: "Unknown " + sourceLabel + " type",
-			Subject: &block.LabelRanges[0],
-		})
-		return source, diags
+		// calling BuilderSchemas will start a new builder plugin to ask about
+		// the schema of the builder; but we do not know yet if the builder is
+		// actually going to be used. This also allows to call the same builder
+		// more than once.
+		builder, err := p.BuilderSchemas(source.Type)
+		if err != nil {
+			diags = append(diags, &hcl.Diagnostic{
+				Summary: "Failed to load " + sourceLabel + " type",
+				Detail:  err.Error(),
+				Subject: &block.LabelRanges[0],
+			})
+			return builder, diags
+		}
+
+		decoded, moreDiags := decodeHCL2Spec(block, nil, builder)
+		diags = append(diags, moreDiags...)
+		warning, err := builder.Prepare(decoded)
+		moreDiags = warningErrorsToDiags(block, warning, err)
+		diags = append(diags, moreDiags...)
+		return builder, diags
 	}
 
-	flatSource, moreDiags := decodeDecodable(block, nil, sourceSpec)
-	diags = append(diags, moreDiags...)
-	source.Cfg = flatSource
+	source.startBuilder = starter
 
-	return source, diags
+	return source, nil
 }
 
 func (source *Source) Ref() SourceRef {

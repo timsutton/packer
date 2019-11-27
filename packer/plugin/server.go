@@ -61,8 +61,7 @@ func Server() (*packrpc.Server, error) {
 		return nil, err
 	}
 
-	log.Printf("Plugin minimum port: %d\n", minPort)
-	log.Printf("Plugin maximum port: %d\n", maxPort)
+	log.Printf("Plugin port range: [%d,%d]", minPort, maxPort)
 
 	listener, err := serverListener(minPort, maxPort)
 	if err != nil {

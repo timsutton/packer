@@ -105,8 +105,7 @@ type Config struct {
 	ctx interpolate.Context
 }
 
-func NewConfig(raws ...interface{}) (*Config, []string, error) {
-	c := new(Config)
+func (c *Config) Prepare(raws ...interface{}) ([]string, error) {
 	err := config.Decode(c, &config.DecodeOpts{
 		Interpolate:        true,
 		InterpolateContext: &c.ctx,
@@ -121,7 +120,7 @@ func NewConfig(raws ...interface{}) (*Config, []string, error) {
 		},
 	}, raws...)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// Defaults
@@ -201,7 +200,7 @@ func NewConfig(raws ...interface{}) (*Config, []string, error) {
 
 	// Check for any errors.
 	if errs != nil && len(errs.Errors) > 0 {
-		return nil, warnings, errs
+		return warnings, errs
 	}
 
 	// TODO: Write a packer fix and just remove import_opts
@@ -209,5 +208,5 @@ func NewConfig(raws ...interface{}) (*Config, []string, error) {
 		c.ImportFlags = append(c.ImportFlags, "--options", c.ImportOpts)
 	}
 
-	return c, warnings, nil
+	return warnings, nil
 }

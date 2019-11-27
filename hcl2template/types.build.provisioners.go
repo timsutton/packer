@@ -3,12 +3,14 @@ package hcl2template
 import (
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/gohcl"
+	"github.com/hashicorp/packer/packer"
 )
 
 // Provisioner represents a parsed provisioner
 type Provisioner struct {
+	PType string
 	// Cfg is a parsed config
-	Cfg interface{}
+	Provisioner packer.Provisioner
 }
 
 type ProvisionerGroup struct {
@@ -22,7 +24,7 @@ type ProvisionerGroup struct {
 // provisioners
 type ProvisionerGroups []*ProvisionerGroup
 
-func (p *Parser) decodeProvisionerGroup(block *hcl.Block, provisionerSpecs map[string]Decodable) (*ProvisionerGroup, hcl.Diagnostics) {
+func (p *Parser) decodeProvisionerGroup(block *hcl.Block, provisionerSpecs packer.ProvisionerStore) (*ProvisionerGroup, hcl.Diagnostics) {
 	var b struct {
 		Communicator string   `hcl:"communicator,optional"`
 		Remain       hcl.Body `hcl:",remain"`
@@ -37,7 +39,7 @@ func (p *Parser) decodeProvisionerGroup(block *hcl.Block, provisionerSpecs map[s
 	buildSchema := &hcl.BodySchema{
 		Blocks: []hcl.BlockHeaderSchema{},
 	}
-	for k := range provisionerSpecs {
+	for _, k := range provisionerSpecs.List() {
 		buildSchema.Blocks = append(buildSchema.Blocks, hcl.BlockHeaderSchema{
 			Type: k,
 		})
@@ -46,17 +48,30 @@ func (p *Parser) decodeProvisionerGroup(block *hcl.Block, provisionerSpecs map[s
 	content, moreDiags := b.Remain.Content(buildSchema)
 	diags = append(diags, moreDiags...)
 	for _, block := range content.Blocks {
-		provisioner, found := provisionerSpecs[block.Type]
-		if !found {
+		provisioner, err := provisionerSpecs.Get(block.Type)
+		if err != nil {
 			diags = append(diags, &hcl.Diagnostic{
-				Summary: "Unknown " + buildProvisionnersLabel + " type",
-				Subject: &block.LabelRanges[0],
+				Summary: "Failed loading " + block.Type,
+				Subject: block.LabelRanges[0].Ptr(),
+				Detail:  err.Error(),
 			})
 			continue
 		}
-		flatProvisinerCfg, moreDiags := decodeDecodable(block, nil, provisioner)
+		flatProvisinerCfg, moreDiags := decodeHCL2Spec(block, nil, provisioner)
 		diags = append(diags, moreDiags...)
-		pg.Provisioners = append(pg.Provisioners, Provisioner{flatProvisinerCfg})
+		err = provisioner.Prepare(flatProvisinerCfg)
+		if err != nil {
+			diags = append(diags, &hcl.Diagnostic{
+				Severity: hcl.DiagError,
+				Summary:  "Failed preparing " + block.Type,
+				Detail:   err.Error(),
+				Subject:  block.DefRange.Ptr(),
+			})
+		}
+		pg.Provisioners = append(pg.Provisioners, Provisioner{
+			PType:       block.Type,
+			Provisioner: provisioner,
+		})
 	}
 
 	return pg, diags

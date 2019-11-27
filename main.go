@@ -137,9 +137,10 @@ func wrappedMain() int {
 	packer.LogSecretFilter.SetOutput(os.Stderr)
 	log.SetOutput(&packer.LogSecretFilter)
 
-	log.Printf("[INFO] Packer version: %s", version.FormattedVersion())
-	log.Printf("Packer Target OS/Arch: %s %s", runtime.GOOS, runtime.GOARCH)
-	log.Printf("Built with Go Version: %s", runtime.Version())
+	log.Printf("[INFO] Packer version: %s [%s %s %s]",
+		version.FormattedVersion(),
+		runtime.Version(),
+		runtime.GOOS, runtime.GOARCH)
 
 	inPlugin := os.Getenv(plugin.MagicCookieKey) == plugin.MagicCookieValue
 
@@ -148,7 +149,6 @@ func wrappedMain() int {
 		fmt.Fprintf(os.Stderr, "Error loading configuration: \n\n%s\n", err)
 		return 1
 	}
-	log.Printf("Packer config: %+v", config)
 
 	// Fire off the checkpoint.
 	go runCheckpoint(config)
@@ -216,6 +216,10 @@ func wrappedMain() int {
 				Hook:          config.LoadHook,
 				PostProcessor: config.LoadPostProcessor,
 				Provisioner:   config.LoadProvisioner,
+
+				Communicator:       config.Communicators.Get,
+				ProvisionerStore:   config.Provisioners,
+				PostProcessorStore: config.PostProcessors,
 			},
 			Version: version.Version,
 		},
@@ -289,6 +293,10 @@ func loadConfig() (*config, error) {
 	var config config
 	config.PluginMinPort = 10000
 	config.PluginMaxPort = 25000
+	config.Communicators = mapOfCommunicator{}
+	config.Builders = mapOfBuilder{}
+	config.PostProcessors = mapOfPostProcessor{}
+	config.Provisioners = mapOfProvisioner{}
 	if err := config.Discover(); err != nil {
 		return nil, err
 	}

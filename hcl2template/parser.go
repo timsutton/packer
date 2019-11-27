@@ -8,6 +8,7 @@ import (
 
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclparse"
+	"github.com/hashicorp/packer/packer"
 )
 
 const (
@@ -29,13 +30,12 @@ var configSchema = &hcl.BodySchema{
 type Parser struct {
 	*hclparse.Parser
 
-	ProvisionersSchemas map[string]Decodable
+	BuilderSchemas      packer.BuilderFunc
+	CommunicatorSchemas packer.ConfigurableCommunicatorFunc
 
-	PostProvisionersSchemas map[string]Decodable
+	ProvisionersSchemas packer.ProvisionerStore
 
-	CommunicatorSchemas map[string]Decodable
-
-	SourceSchemas map[string]Decodable
+	PostProcessorsSchemas packer.PostProcessorStore
 }
 
 const hcl2FileExt = ".pkr.hcl"
@@ -46,9 +46,9 @@ func (p *Parser) Parse(filename string) (*PackerConfig, hcl.Diagnostics) {
 	hclFiles := []string{}
 	jsonFiles := []string{}
 	if strings.HasSuffix(filename, hcl2FileExt) {
-		hclFiles = append(hclFiles, hcl2FileExt)
+		hclFiles = append(hclFiles, filename)
 	} else if strings.HasSuffix(filename, ".json") {
-		jsonFiles = append(jsonFiles, hcl2FileExt)
+		jsonFiles = append(jsonFiles, filename)
 	} else {
 		fileInfos, err := ioutil.ReadDir(filename)
 		if err != nil {
@@ -119,7 +119,7 @@ func (p *Parser) ParseFile(f *hcl.File, cfg *PackerConfig) hcl.Diagnostics {
 				cfg.Sources = map[SourceRef]*Source{}
 			}
 
-			source, moreDiags := p.decodeSource(block, p.SourceSchemas)
+			source, moreDiags := p.decodeSource(block)
 			diags = append(diags, moreDiags...)
 
 			ref := source.Ref()
