@@ -45,6 +45,8 @@ var netDevice = map[string]bool{
 	"i82559er":       true,
 	"rtl8139":        true,
 	"e1000":          true,
+	"e1000-82544gc":  true,
+	"e1000-82545em":  true,
 	"pcnet":          true,
 	"virtio":         true,
 	"virtio-net":     true,
@@ -204,11 +206,11 @@ type Config struct {
 	// in megabytes. This defaults to 512 megabytes.
 	MemorySize int `mapstructure:"memory" required:"false"`
 	// The driver to use for the network interface. Allowed values `ne2k_pci`,
-	// `i82551`, `i82557b`, `i82559er`, `rtl8139`, `e1000`, `pcnet`, `virtio`,
-	// `virtio-net`, `virtio-net-pci`, `usb-net`, `i82559a`, `i82559b`,
-	// `i82559c`, `i82550`, `i82562`, `i82557a`, `i82557c`, `i82801`,
-	// `vmxnet3`, `i82558a` or `i82558b`. The Qemu builder uses `virtio-net` by
-	// default.
+	// `i82551`, `i82557b`, `i82559er`, `rtl8139`, `e1000`, `e1000-82544gc`,
+	// `e1000-82545em`, `pcnet`, `virtio`, `virtio-net`, `virtio-net-pci`,
+	// `usb-net`, `i82559a`, `i82559b`, `i82559c`, `i82550`, `i82562`, `i82557a`,
+	// `i82557c`, `i82801`, `vmxnet3`, `i82558a` or `i82558b`. The Qemu builder
+	// uses `virtio-net` by default.
 	NetDevice string `mapstructure:"net_device" required:"false"`
 	// This is the path to the directory where the
 	// resulting virtual machine will be created. This may be relative or absolute.
